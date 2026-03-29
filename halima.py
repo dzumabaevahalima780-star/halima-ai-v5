@@ -4,213 +4,126 @@ import plotly.express as px
 import plotly.graph_objects as go
 from groq import Groq
 import datetime
-import random
+from PIL import Image
+import PyPDF2
+import docx
+import io
 
-# Баракчанын жөндөөлөрү
-st.set_page_config(page_title="HALIMA AI v6.0", layout="wide", page_icon="🤖")
+# 1. Баракчанын негизги жөндөөлөрү
+st.set_page_config(page_title="HALIMA AI v7.0", layout="wide", page_icon="🤖")
 
+# 2. Файлдардан (PDF, DOCX, TXT) текстти окуу функциясы
+def extract_text_from_file(uploaded_file):
+    try:
+        if uploaded_file.type == "application/pdf":
+            pdf_reader = PyPDF2.PdfReader(uploaded_file)
+            return "".join([page.extract_text() for page in pdf_reader.pages])
+        elif uploaded_file.type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
+            doc = docx.Document(uploaded_file)
+            return "\n".join([para.text for para in doc.paragraphs])
+        else:
+            return str(uploaded_file.read(), "utf-8")
+    except Exception as e:
+        return f"Файлды окууда ката кетти: {e}"
+
+# 3. Визуалдык стильдер
 def local_css(style_type):
-    if style_type == "agro":
-        bg_color = "#f0f9f1" 
-        accent = "#2e7d32"
-    elif style_type == "edu":
-        bg_color = "#f0f4f8" 
-        accent = "#1565c0"
-    else:
-        bg_color = "#ffffff"
-        accent = "#333333"
-
+    bg_color = "#f0f9f1" if style_type == "agro" else "#f0f4f8"
+    accent = "#2e7d32" if style_type == "agro" else "#1565c0"
     st.markdown(f"""
         <style>
         .stApp {{ background-color: {bg_color}; }}
         .main-header {{ color: {accent}; font-weight: bold; font-size: 2.5rem; }}
-        .stButton>button {{ border-radius: 20px; border: 1px solid {accent}; color: {accent}; }}
-        .stTabs [data-baseweb="tab-list"] {{ gap: 10px; }}
-        .stTabs [data-baseweb="tab"] {{ background-color: white; border-radius: 10px 10px 0 0; padding: 10px 20px; }}
+        .stButton>button {{ border-radius: 20px; border: 1px solid {accent}; color: {accent}; width: 100%; }}
         </style>
     """, unsafe_allow_html=True)
 
-# API Ключту текшерүү
+# 4. API Ключту текшерүү
 try:
     client = Groq(api_key=st.secrets["GROQ_API_KEY"])
-except Exception as e:
+except:
     st.error("API Key ката! .streamlit/secrets.toml файлын текшериңиз.")
     st.stop()
 
-# Сессияларды баштапкы абалга келтирүү
+# 5. Сессияны башкаруу
 if 'auth' not in st.session_state: st.session_state.auth = False
 if 'app_mode' not in st.session_state: st.session_state.app_mode = "gate"
-if 'psy_chat' not in st.session_state: st.session_state.psy_chat = []
-if 'pro_history' not in st.session_state: st.session_state.pro_history = []
+if 'user_name' not in st.session_state: st.session_state.user_name = "Конок"
 
-regions_data = {
-    "Жалал-Абад": ["Ноокен", "Сузак", "Базар-Коргон", "Аксы", "Токтогул", "Ала-Бука"],
-    "Ош": ["Кара-Суу", "Араван", "Өзгөн", "Ноокат", "Алай"],
-    "Чүй": ["Аламүдүн", "Сокулук", "Жайыл", "Ысык-Ата", "Кемин"],
-    "Баткен": ["Кадамжай", "Лейлек", "Баткен"],
-    "Талас": ["Манас", "Бакай-Ата", "Кара-Буура", "Талас"],
-    "Нарын": ["Кочкор", "Ат-Башы", "Жумгал", "Ак-Талаа"],
-    "Ысык-Көл": ["Түп", "Жети-Өгүз", "Ак-Суу", "Тоң"]
-}
-
-# КИРҮҮ (Авторизация)
+# 6. КИРҮҮ БЕТИ (Авторизация)
 if not st.session_state.auth:
     st.title("🔐 HALIMA AI - Эксперттик Платформа")
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
         user = st.text_input("Колдонуучунун аты:")
-        # Жаңыланган пароль: 31012008
         pwd = st.text_input("Пароль:", type="password")
-
-        if st.button("Кирүү", use_container_width=True):
-            if pwd == "31012008":
+        if st.button("Кирүү"):
+            if pwd == "31012008": # Сиз сураган жаңы пароль
                 st.session_state.auth = True
                 st.session_state.user_name = user
                 st.rerun()
-            else: 
+            else:
                 st.error("Пароль туура эмес!")
     st.stop()
 
-# БАШКЫ МЕНЮ (Gate)
+# 7. БАШКЫ МЕНЮ
 if st.session_state.app_mode == "gate":
     st.markdown('<h1 class="main-header">🚀 Кош келиңиз, Кожоюн!</h1>', unsafe_allow_html=True)
     col_agro, col_edu = st.columns(2)
     with col_agro:
-        st.info("🚜 *АГРОНОМИЯ ЖАНА ЭКОНОМИКА*\n\nСатуу каналдары, экономикалык эсептөөлөр жана топурак анализи.")
-        if st.button("Агрономияга өтүү", use_container_width=True):
+        st.info("🚜 **АГРОНОМИЯ**\n\nФото анализ жана экономикалык эсептөөлөр.")
+        if st.button("Агрономияга өтүү"):
             st.session_state.app_mode = "agro"; st.rerun()
     with col_edu:
-        st.success("🎓 *БИЛИМ БЕРҮҮ ЖАНА ПСИХОЛОГИЯ*\n\nПрофессионалдык методдор, Голланд тести жана психолог кеңеши.")
-        if st.button("Билим берүүгө өтүү", use_container_width=True):
+        st.success("🎓 **БИЛИМ БЕРҮҮ**\n\nДокументтерди талдоо жана психолог кеңеши.")
+        if st.button("Билим берүүгө өтүү"):
             st.session_state.app_mode = "edu"; st.rerun()
     st.stop()
 
-# Каптал меню
+# 8. ИШТӨӨ БӨЛҮМДӨРҮ
+local_css(st.session_state.app_mode)
+
 with st.sidebar:
     st.header(f"👤 @{st.session_state.user_name}")
-    if st.button("🏠 Башкы меню"):
+    if st.button("🏠 Башкы менюга кайтуу"):
         st.session_state.app_mode = "gate"; st.rerun()
-    st.markdown("---")
-    st.write(f"📅 Дата: {datetime.datetime.now().strftime('%d.%m.%Y')}")
+    st.write(f"📅 {datetime.datetime.now().strftime('%d.%m.%Y')}")
 
-# --- АГРОНОМИЯ БӨЛҮМҮ ---
-if st.session_state.app_mode == "agro":
-    local_css("agro")
-    st.markdown('<h1 class="main-header">🌿 Улуттук Агро-Экономикалык Платформа</h1>', unsafe_allow_html=True)
-    
-    agro_tabs = st.tabs(["📊 Аналитика", "💰 Сатуу Каналдары", "🧪 Лаборатория", "📈 Киреше Калькулятору"])
+st.markdown(f'<h1 class="main-header">{"🌿 Агро-Эксперт" if st.session_state.app_mode == "agro" else "🎓 Билим Борбору"}</h1>', unsafe_allow_html=True)
 
-    with agro_tabs[0]:
-        col_inp, col_res = st.columns([1, 2])
-        with col_inp:
-            st.subheader("📍 Параметрлер")
-            reg = st.selectbox("Облус:", list(regions_data.keys()))
-            dist = st.selectbox("Район:", regions_data[reg])
-            crop = st.text_input("Өсүмдүк:", "Төө буурчак (Фасоль)")
-            area = st.number_input("Жер көлөмү (сотик):", value=10)
-            
-            if st.button("🚀 Анализди баштоо", use_container_width=True):
-                p = f"Район: {dist}, Өсүмдүк: {crop}, Жер: {area} сотик. Агро-карта, сугаруу жана экономикалык прогноз бер."
-                # Жаңыланган модель: llama-3.1-8b-instant
-                res = client.chat.completions.create(messages=[{"role":"user","content":p}], model="llama-3.1-8b-instant")
-                st.session_state.agro_out = res.choices[0].message.content
+# 9. ЖАҢЫ ФУНКЦИЯ: ФОТО ЖАНА ФАЙЛ АНАЛИЗИ
+st.markdown("---")
+st.subheader("📸 Сүрөт же Файл аркылуу анализ")
+uploaded_file = st.file_uploader("Өсүмдүктүн сүрөтүн же анализ файлын жүктөңүз", type=['png', 'jpg', 'jpeg', 'pdf', 'docx', 'txt'])
 
-        with col_res:
-            if 'agro_out' in st.session_state:
-                st.markdown(st.session_state.agro_out)
-                st.caption("🌐 Маалымат булагы: https://stat.gov.kg/ (2025-2026-жылдын отчетторунун негизинде)")
-
-    with agro_tabs[1]:
-        st.subheader("💹 Продукцияны сатуу жана Экспорттук каналдар")
-        sales_data = pd.DataFrame({
-            "Завод / Сатуу түйүнү": ["Агро-Экспорт Талас", "Бишкек Склад", "Ош-Дан", "Жергиликтүү базар"],
-            "Сатып алуу баасы (сом/кг)": [95, 88, 82, 75],
-            "Пайдалуулук (%)": [90, 75, 60, 45]
-        })
+if uploaded_file:
+    if uploaded_file.type.startswith('image'):
+        # Сүрөттү иштетүү
+        image = Image.open(uploaded_file)
+        st.image(image, caption='Жүктөлгөн сүрөт', use_container_width=True)
         
-        col_table, col_chart = st.columns([1, 1])
-        with col_table:
-            st.write("📊 Учурдагы орточо баалар:")
-            st.table(sales_data)
-        
-        with col_chart:
-            fig_sales = px.bar(sales_data, x="Завод / Сатуу түйүнү", y="Пайдалуулук (%)", 
-                               color="Сатып алуу баасы (сом/кг)", title="Кайсы жерге сатуу пайдалуу?")
-            st.plotly_chart(fig_sales, use_container_width=True)
-        
-        st.info("💡 *Эксперттин сунушу:* Сиз тандаган өсүмдүктү 'Агро-Экспорт Талас' аркылуу сатуу 20% көбүрөөк пайда берет.")
-
-    with agro_tabs[2]:
-        st.subheader("🧪 Топурактын виртуалдык анализи")
-        ph = st.select_slider("pH деңгээли:", options=[4, 5, 6, 7, 8, 9], value=7)
-        if st.button("Сунуш алуу"):
-            st.success(f"pH {ph} үчүн сунуш: Күрүч өстүрүүгө эң сонун шарт. Азоттук жер семирткичтерди 10% азайтыңыз.")
-
-    with agro_tabs[3]:
-        st.subheader("📊 Түшүмдүүлүктү жана кирешени болжолдоо")
-        exp_yield = st.number_input("Күтүлүп жаткан түшүм (тонна):", value=1.0)
-        market_price = st.number_input("Болжолдуу баа (сом/кг):", value=85.0)
-        total_profit = exp_yield * 1000 * market_price
-        st.metric("Жалпы болжолдуу киреше", f"{total_profit:,.0f} сом", delta="↑ 12% прогноз")
-
-# --- БИЛИМ БЕРҮҮ БӨЛҮМҮ ---
-elif st.session_state.app_mode == "edu":
-    local_css("edu")
-    st.markdown('<h1 class="main-header">🎓 Санариптик Билим Берүү Борбору</h1>', unsafe_allow_html=True)
-    
-    edu_tabs = st.tabs(["🛠 Сабак Конструктору", "🎯 Кесип Тандоо", "🧠 Психолог"])
-
-    with edu_tabs[0]:
-        st.subheader("🛠 Мугалимдин жардамчысы")
-        col_e1, col_e2 = st.columns([1, 2])
-        with col_e1:
-            m_topic = st.text_input("Сабактын темасы:", "Кыргызстандын тарыхы")
-            m_type = st.selectbox("Сабактын түрү:", ["1 сааттык сабак", "Лекция (90 мүнөт)", "Практикалык иш", "Семинар"])
-            method = st.selectbox("Методика:", ["Сократтык маек", "Коменский системасы", "Интерактивдүү оюн", "Макаренко методу"])
-            
-            if st.button("План түзүү", use_container_width=True):
-                p = f"Тема: {m_topic}. Түрү: {m_type}. Метод: {method}. Сабактын планын кыргыз тилинде таблица менен түз."
-                # Жаңыланган модель: llama-3.1-8b-instant
-                res = client.chat.completions.create(messages=[{"role":"user","content":p}], model="llama-3.1-8b-instant")
-                st.session_state.edu_plan = res.choices[0].message.content
-        
-        with col_e2:
-            if 'edu_plan' in st.session_state:
-                st.markdown(st.session_state.edu_plan)
-
-    with edu_tabs[1]:
-        st.subheader("🎯 Профориентация: Голланд методикасы")
-        with st.form("pro_test"):
-            c1 = st.slider("1. Техника жана Программалоо:", 0, 10, 5)
-            c2 = st.slider("2. Адамдарга жардам берүү:", 0, 10, 5)
-            c3 = st.slider("3. Илим жана Изилдөө:", 0, 10, 5)
-            c4 = st.slider("4. Искусство жана Дизайн:", 0, 10, 5)
-            c5 = st.slider("5. Лидерлик жана Бизнес:", 0, 10, 5)
-            submit_test = st.form_submit_button("Жыйынтыкты көрүү")
-
-        if submit_test:
-            scores = {"Реалдуу": c1, "Социалдык": c2, "Интеллектуалдык": c3, "Артисттик": c4, "Предпринимательдик": c5}
-            fig_pro = go.Figure(data=go.Scatterpolar(r=list(scores.values()), theta=list(scores.keys()), fill='toself'))
-            st.plotly_chart(fig_pro, use_container_width=True)
-            st.success(f"✅ Сиздин басымдуу тибиңиз: *{max(scores, key=scores.get)}*.")
-
-    with edu_tabs[2]:
-        st.subheader("🧠 Психологдун консультациясы")
-        for m in st.session_state.psy_chat:
-            with st.chat_message(m["role"]): st.write(m["content"])
-        
-        if psy_in := st.chat_input("Психологго суроо жазыңыз..."):
-            st.session_state.psy_chat.append({"role": "user", "content": psy_in})
-            with st.chat_message("user"): st.write(psy_in)
-            
-            # Жаңыланган модель: llama-3.1-8b-instant
-            r = client.chat.completions.create(
-                messages=[{"role":"system","content":"Сиз жылуу маанайдагы психологсуз."}] + st.session_state.psy_chat, 
-                model="llama-3.1-8b-instant"
-            )
-            resp = r.choices[0].message.content
-            st.session_state.psy_chat.append({"role": "assistant", "content": resp})
-            st.rerun()
+        if st.button("🖼️ Сүрөттү AI менен талда"):
+            with st.spinner("Халима сүрөттү көрүп жатат..."):
+                # Vision моделин колдонуу
+                res = client.chat.completions.create(
+                    messages=[{"role": "user", "content": "Бул сүрөттөгү абалды кыргыз тилинде эксперт катары деталдуу талдап бер."}],
+                    model="llama-3.2-11b-vision-preview"
+                )
+                st.write("### 🤖 Халиманын анализи:")
+                st.write(res.choices[0].message.content)
+    else:
+        # Файлды иштетүү
+        file_text = extract_text_from_file(uploaded_file)
+        st.success("📄 Файл ийгиликтүү окулду!")
+        if st.button("🔍 Документтин мазмунун талда"):
+            with st.spinner("Текст талданууда..."):
+                # Тексттик модель
+                res = client.chat.completions.create(
+                    messages=[{"role": "user", "content": f"Төмөнкү текстти кыргыз тилинде кыскача мазмундап жана эксперттик корутунду бер: {file_text[:3000]}"}],
+                    model="llama-3.1-8b-instant"
+                )
+                st.write("### 🤖 Документ боюнча корутунду:")
+                st.write(res.choices[0].message.content)
 
 st.markdown("---")
-st.caption(f"© 2026 HALIMA AI - Бардык маалыматтар КР Улуттук статистика комитетинин базасына негизделген.")
+st.caption("© 2026 HALIMA AI - Жаңыланган версия v7.0")
