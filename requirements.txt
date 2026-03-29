@@ -3,7 +3,6 @@ pandas
 plotly
 groq
 PyPDF2
+python-docx
+Pillow
 xlsxwriter
-pandas
-plotly
-groq
