@@ -8,11 +8,14 @@ from PIL import Image
 import PyPDF2
 import docx
 import io
+import base64
 
 # 1. Негизги жөндөөлөр
 st.set_page_config(page_title="HALIMA AI v7.0", layout="wide", page_icon="🤖")
 
-# 2. Файлдарды окуу функциясы
+def encode_image(uploaded_file):
+    return base64.b64encode(uploaded_file.getvalue()).decode('utf-8')
+
 def extract_text_from_file(uploaded_file):
     try:
         if uploaded_file.type == "application/pdf":
@@ -23,10 +26,9 @@ def extract_text_from_file(uploaded_file):
             return "\n".join([para.text for para in doc.paragraphs])
         else:
             return str(uploaded_file.read(), "utf-8")
-    except:
+    except Exception:
         return "Файлды окууда ката кетти."
 
-# 3. Стильдер
 def local_css(style_type):
     bg_color = "#f0f9f1" if style_type == "agro" else "#f0f4f8"
     accent = "#2e7d32" if style_type == "agro" else "#1565c0"
@@ -41,16 +43,14 @@ def local_css(style_type):
 # 4. API Ключ
 try:
     client = Groq(api_key=st.secrets["GROQ_API_KEY"])
-except:
-    st.error("API Key ката!")
+except Exception:
+    st.error("API Key ката! .streamlit/secrets.toml файлын текшериңиз.")
     st.stop()
 
-# Сессияларды сактоо
 if 'auth' not in st.session_state: st.session_state.auth = False
 if 'app_mode' not in st.session_state: st.session_state.app_mode = "gate"
 if 'psy_chat' not in st.session_state: st.session_state.psy_chat = []
 
-# Аймактар маалыматы
 regions_data = {
     "Жалал-Абад": ["Ноокен", "Сузак", "Базар-Коргон", "Аксы", "Токтогул", "Ала-Бука"],
     "Ош": ["Кара-Суу", "Араван", "Өзгөн", "Ноокат", "Алай"],
@@ -73,7 +73,8 @@ if not st.session_state.auth:
                 st.session_state.auth = True
                 st.session_state.user_name = user
                 st.rerun()
-            else: st.error("Пароль туура!")
+            else:
+                st.error("Пароль туура эмес!")
     st.stop()
 
 # 6. БАШКЫ МЕНЮ
@@ -90,7 +91,6 @@ if st.session_state.app_mode == "gate":
             st.session_state.app_mode = "edu"; st.rerun()
     st.stop()
 
-# 7. ИШТӨӨ БӨЛҮМДӨРҮ
 local_css(st.session_state.app_mode)
 with st.sidebar:
     st.header(f"👤 @{st.session_state.user_name}")
@@ -102,19 +102,34 @@ with st.sidebar:
 if st.session_state.app_mode == "agro":
     st.markdown('<h1 class="main-header">🌿 Агро-Экономикалык Платформа</h1>', unsafe_allow_html=True)
     
-    # ФОТО АНАЛИЗ ЖАНА ФАЙЛ (ЖАҢЫ)
-    with st.expander("📸 Сүрөт же Анализ файлын жүктөө (ЖАҢЫ)"):
+    with st.expander("📸 Сүрөт же Анализ файлын жүктөө"):
         up_file = st.file_uploader("Файлды тандаңыз", type=['pdf', 'docx', 'jpg', 'png'], key="agro_up")
         if up_file:
+            user_task = st.text_area("AI үчүн тапшырма жазыңыз:", placeholder="Мисалы: Бул сүрөттөгү ооруну аныкта...")
             if up_file.type.startswith('image'):
                 st.image(up_file, width=300)
                 if st.button("🖼️ Сүрөттү AI менен талда"):
-                    res = client.chat.completions.create(messages=[{"role":"user","content":"Сүрөттү кыргызча талда."}], model="llama-3.2-11b-vision-preview")
-                    st.info(res.choices[0].message.content)
+                    base64_image = encode_image(up_file)
+                    final_prompt = user_task if user_task else "Бул сүрөттөгү агро-ситуацияны кыргызча талдап бер."
+                    try:
+                        res = client.chat.completions.create(
+                            messages=[{
+                                "role": "user",
+                                "content": [
+                                    {"type": "text", "text": final_prompt},
+                                    {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}}
+                                ]
+                            }],
+                            model="llama-3.2-11b-vision-instant" # Жаңыланган модель
+                        )
+                        st.info(res.choices[0].message.content)
+                    except Exception as e:
+                        st.error(f"Ката кетти: {e}")
             else:
                 text = extract_text_from_file(up_file)
                 if st.button("🔍 Файлды талда"):
-                    res = client.chat.completions.create(messages=[{"role":"user","content":f"Текстти талда: {text[:2000]}"}], model="llama-3.1-8b-instant")
+                    prompt = f"Тапшырма: {user_task}\n\nТекст: {text[:2000]}" if user_task else f"Текстти талда: {text[:2000]}"
+                    res = client.chat.completions.create(messages=[{"role":"user","content": prompt}], model="llama-3.1-8b-instant")
                     st.info(res.choices[0].message.content)
 
     tabs = st.tabs(["📊 Аналитика", "💰 Сатуу Каналдары", "📈 Калькулятор"])
@@ -130,21 +145,50 @@ if st.session_state.app_mode == "agro":
 elif st.session_state.app_mode == "edu":
     st.markdown('<h1 class="main-header">🎓 Санариптик Билим Борбору</h1>', unsafe_allow_html=True)
     
-    # ФАЙЛДАРДЫ ТАЛДОО (ЖАҢЫ)
     with st.expander("📄 Документти талдоо (PDF/DOCX)"):
-        edu_file = st.file_uploader("Сабак планын же текстти жүктөңүз", type=['pdf', 'docx', 'txt'], key="edu_up")
+        edu_file = st.file_uploader("Документти жүктөңүз", type=['pdf', 'docx', 'txt'], key="edu_up")
         if edu_file:
+            edu_task = st.text_area("Документ боюнча тапшырма:", placeholder="Мисалы: Тест түз же кыскарт...")
             text = extract_text_from_file(edu_file)
             if st.button("🔍 Документти AI менен талда"):
-                res = client.chat.completions.create(messages=[{"role":"user","content":f"Төмөнкү документти кыргызча мазмундап бер: {text[:2000]}"}], model="llama-3.1-8b-instant")
+                prompt = f"Тапшырма: {edu_task}\n\nТекст: {text[:2000]}" if edu_task else f"Мазмундап бер: {text[:2000]}"
+                res = client.chat.completions.create(messages=[{"role":"user","content": prompt}], model="llama-3.1-8b-instant")
                 st.info(res.choices[0].message.content)
 
     tabs = st.tabs(["🛠 Сабак Конструктору", "🎯 Профориентация", "🧠 Психолог"])
+    
     with tabs[0]:
         topic = st.text_input("Сабактын темасы:")
         if st.button("План түзүү"):
             res = client.chat.completions.create(messages=[{"role":"user","content":f"{topic} темасына сабак планы."}], model="llama-3.1-8b-instant")
             st.write(res.choices[0].message.content)
+
+    with tabs[1]:
+        st.subheader("🎯 Голланд методикасы боюнча кесип тандоо")
+        with st.form("holland_test"):
+            c1 = st.slider("Реалдуу (Техника, жабдыктар менен иштөө):", 0, 10, 5)
+            c2 = st.slider("Интеллектуалдык (Илим, изилдөө):", 0, 10, 5)
+            c3 = st.slider("Артисттик (Чыгармачылык, дизайн):", 0, 10, 5)
+            c4 = st.slider("Социалдык (Адамдарга жардам берүү, окутуу):", 0, 10, 5)
+            c5 = st.slider("Предпринимателдик (Бизнес, лидерлик):", 0, 10, 5)
+            c6 = st.slider("Конвенционалдык (Эсеп-кысап, документтер):", 0, 10, 5)
+            submit = st.form_submit_button("Жыйынтыкты көрүү")
+        
+        if submit:
+            scores = {"Реалдуу": c1, "Интеллектуалдык": c2, "Артисттик": c3, "Социалдык": c4, "Бизнес": c5, "Офис": c6}
+            fig = go.Figure(data=go.Scatterpolar(r=list(scores.values()), theta=list(scores.keys()), fill='toself'))
+            st.plotly_chart(fig)
+            
+            top_type = max(scores, key=scores.get)
+            st.success(f"Сиздин басымдуу тибиңиз: **{top_type}**")
+            
+            # AI сунушу
+            with st.spinner("Университеттер жана кесиптер тандалууда..."):
+                res = client.chat.completions.create(
+                    messages=[{"role":"user","content": f"Голланд тести боюнча {top_type} тибиндеги окуучуга Кыргызстандагы 5 кесипти жана аларды окуткан эң мыкты университеттерди тизмелеп бер."}],
+                    model="llama-3.1-8b-instant"
+                )
+                st.write(res.choices[0].message.content)
             
     with tabs[2]:
         st.subheader("🧠 Психологдун консультациясы")
@@ -152,7 +196,7 @@ elif st.session_state.app_mode == "edu":
             with st.chat_message(m["role"]): st.write(m["content"])
         if p_in := st.chat_input("Суроо жазыңыз..."):
             st.session_state.psy_chat.append({"role": "user", "content": p_in})
-            r = client.chat.completions.create(messages=[{"role":"system","content":"Сиз психологсуз."}] + st.session_state.psy_chat, model="llama-3.1-8b-instant")
+            r = client.chat.completions.create(messages=[{"role":"system","content":"Сиз жылуу маанайдагы психологсуз."}] + st.session_state.psy_chat, model="llama-3.1-8b-instant")
             st.session_state.psy_chat.append({"role": "assistant", "content": r.choices[0].message.content})
             st.rerun()
 
